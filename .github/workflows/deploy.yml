@@ -1,0 +1,44 @@
+name: deploy
+
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: Deploy na VM
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout do código
+        uses: actions/checkout@v7
+
+      - name: Conferir o docker-compose.yml
+        run: docker compose config --quiet
+
+      - name: Copiar o docker-compose.yml para a VM
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ vars.SSH_HOST }}
+          username: ${{ vars.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          source: docker-compose.yml
+          target: /opt/n8n
+
+      - name: Atualizar os containers na VM
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ vars.SSH_HOST }}
+          username: ${{ vars.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            set -e
+            cd /opt/n8n
+            cat > .env <<EOF
+            DOMAIN=${{ vars.DOMAIN }}
+            ACME_EMAIL=${{ vars.ACME_EMAIL }}
+            N8N_ENCRYPTION_KEY=${{ secrets.N8N_ENCRYPTION_KEY }}
+            EOF
+            chmod 600 .env
+            docker compose pull
+            docker compose up -d --remove-orphans
+            docker image prune -f
+            docker compose ps
